@@ -65,15 +65,32 @@ Data pre-processing is an integral step in any data analysis exercise. Cleaning 
 ### Remove Duplicates
 The first step when working with customer data is to check for duplicate records and remove them. Using the Customer ID field, it is possible to check for duplicates by finding any ID numbers that appear more than once. 
 
-<div data-pagedtable="false">
-  <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["CustomerID"],"name":[1],"type":["int"],"align":["right"]},{"label":["Title"],"name":[2],"type":["chr"],"align":["left"]},{"label":["FirstName"],"name":[3],"type":["chr"],"align":["left"]},{"label":["MiddleName"],"name":[4],"type":["chr"],"align":["left"]},{"label":["LastName"],"name":[5],"type":["chr"],"align":["left"]},{"label":["Suffix"],"name":[6],"type":["chr"],"align":["left"]}],"data":[{"1":"23770","2":"NULL","3":"Jamie","4":"NULL","5":"Carlson","6":"NULL"},{"1":"23770","2":"NULL","3":"Jamie","4":"NULL","5":"Carlson","6":"NULL"},{"1":"23192","2":"NULL","3":"Emily","4":"E","5":"Garcia","6":"NULL"},{"1":"23192","2":"NULL","3":"Emily","4":"E","5":"Garcia","6":"NULL"},{"1":"26829","2":"NULL","3":"Morgan","4":"NULL","5":"Evans","6":"NULL"},{"1":"26829","2":"NULL","3":"Morgan","4":"NULL","5":"Evans","6":"NULL"},{"1":"13385","2":"NULL","3":"Danielle","4":"M","5":"Cook","6":"NULL"},{"1":"13385","2":"NULL","3":"Danielle","4":"M","5":"Cook","6":"NULL"},{"1":"21647","2":"NULL","3":"Blake","4":"NULL","5":"Brown","6":"NULL"},{"1":"21647","2":"NULL","3":"Blake","4":"NULL","5":"Brown","6":"NULL"},{"1":"24334","2":"NULL","3":"Alexa","4":"NULL","5":"James","6":"NULL"},{"1":"24334","2":"NULL","3":"Alexa","4":"NULL","5":"Jones","6":"NULL"}],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
-  </script>
-</div><div data-pagedtable="false">
-  <script data-pagedtable-source type="application/json">
-{"columns":[{"label":["CustomerID"],"name":[1],"type":["int"],"align":["right"]},{"label":["BikeBuyer"],"name":[2],"type":["int"],"align":["right"]},{"label":["AvgMonthSpend"],"name":[3],"type":["dbl"],"align":["right"]}],"data":[],"options":{"columns":{"min":{},"max":[10]},"rows":{"min":[10],"max":[10]},"pages":{}}}
-  </script>
-</div>
+
+```
+## # A tibble: 12 x 6
+## # Groups:   CustomerID [6]
+##    CustomerID Title FirstName MiddleName LastName Suffix
+##         <int> <chr>     <chr>      <chr>    <chr>  <chr>
+##  1      23770  NULL     Jamie       NULL  Carlson   NULL
+##  2      23770  NULL     Jamie       NULL  Carlson   NULL
+##  3      23192  NULL     Emily          E   Garcia   NULL
+##  4      23192  NULL     Emily          E   Garcia   NULL
+##  5      26829  NULL    Morgan       NULL    Evans   NULL
+##  6      26829  NULL    Morgan       NULL    Evans   NULL
+##  7      13385  NULL  Danielle          M     Cook   NULL
+##  8      13385  NULL  Danielle          M     Cook   NULL
+##  9      21647  NULL     Blake       NULL    Brown   NULL
+## 10      21647  NULL     Blake       NULL    Brown   NULL
+## 11      24334  NULL     Alexa       NULL    James   NULL
+## 12      24334  NULL     Alexa       NULL    Jones   NULL
+```
+
+```
+## # A tibble: 0 x 3
+## # Groups:   CustomerID [0]
+## # ... with 3 variables: CustomerID <int>, BikeBuyer <int>,
+## #   AvgMonthSpend <dbl>
+```
 
 Based on these results, we can see that there are 6 customers in our dataset that are duplicates. They will be removed from this analysis, leaving the new dimensions of the customer dataset as:
 

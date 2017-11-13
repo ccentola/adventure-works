@@ -4,7 +4,6 @@ author: "Carl Centola"
 date: "11/7/2017"
 output:
   html_document:
-    df_print: paged
     toc: yes
     keep_md: true
 ---
