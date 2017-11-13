@@ -6,9 +6,7 @@ output:
   html_document:
     df_print: paged
     toc: yes
-  pdf_document:
-    latex_engine: xelatex
-    toc: yes
+    keep_md: true
 ---
 
 ```{r setup, include=FALSE}
@@ -442,14 +440,13 @@ grid.arrange(bb_1,bb_2,bb_3,bb_4, ncol = 2, nrow = 2,
 
 Findings from our bike buyer bar plots include:
 
-* Customers with two vehicles are more likely to purchase bicycles, 3665 vs 1419. Customers with one vehicle at home tend not to purchase bicycles, 4,703 vs 2,751.
-* Manual labor occupations are less likely to purchase bicycles, 2489 vs 886
-* Males tend to purchase more bicycles more often than the do not 5,653 vs 3,632
-* Customers who are married tend to purchase more bicycles than they do not, 6,348 vs 3,597
+* Customers with two vehicles are more likely to purchase bicycles, 3665 vs. 1419. Customers with one vehicle at home tend not to purchase bicycles, 4,703 vs. 2,751.
+* Manual labor occupations are less likely to purchase bicycles, 2,489 vs. 886.
+* Males tend to purchase more bicycles more often than the do not 5,653 vs. 3,632
+* Customers who are married tend to purchase more bicycles than they do not, 6,348 vs. 3,597
 
 ### Age Group Spending by Income and Gender
-Now that we have determined that age, gender, and income 
-Splitting up our average monthly spending by age group and factoring in income and gender, we can see clearly that some faction of males between the ages of 30 and 50 have much higher average monthly spends than all other age groups.
+Now that we have determined that age, gender, and income play important roles in customer purchasing habits, we can take a closer look at how all of these features impact spending by age group. 
 
 ```{r spend-income-gender-age}
 
@@ -476,6 +473,8 @@ siga <- ggplot(df, aes(YearlyIncome, AvgMonthSpend, color = Gender)) +
 # binned by age group
 siga + facet_grid(. ~ Age_Bin) 
 ```
+
+Splitting up our average monthly spending by age group and factoring in income and gender, we can see clearly that some faction of males between the ages of 30 and 50 have much higher average monthly spends than all other age groups.
 
 ## Modeling
 With our exploratory data analysis in hand, it is now time to take what we learned and generate machine learning models to address our business concerns. 
