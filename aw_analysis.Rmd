@@ -1,0 +1,674 @@
+---
+title: "Adventure Works Cycle Customer Analysis"
+author: "Carl Centola"
+date: "11/7/2017"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+  pdf_document:
+    latex_engine: xelatex
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, 
+                      warning = FALSE, 
+                      fig.width=12, 
+                      fig.height=6,
+                      fig.align = "center")
+```
+
+```{r packages, include=FALSE}
+# load packages
+pacman::p_load(tidyverse, GGally, gridExtra, caret, grid, extrafont)
+```
+
+```{r custom-plot, include=FALSE}
+# base color
+base <- '#DD4747'
+
+# create a universal custom theme
+custom_theme <- function(base_size = 12) {
+  bg_color = 'white'
+  bg_rect = element_rect(fill = bg_color, color = bg_color)
+  gridlines = element_blank()
+
+  theme_classic(base_size) +
+    theme(
+      text = element_text(family = 'Roboto'),
+      plot.title = element_text(family = 'Roboto', 
+                                face = 'bold',
+                                size = 24),
+      plot.subtitle = element_text(size = rel(1), lineheight = 1),
+      plot.caption = element_text(size = rel(0.75), 
+                                  margin = unit(c(1, 0, 0, 0), 'lines'), 
+                                  lineheight = 1.1, 
+                                  color = '#555555'),
+      plot.background = bg_rect,
+      axis.ticks = element_blank(),
+      axis.text.x = element_text(size = rel(1)),
+      axis.title.x = element_text(size = rel(1), 
+                                  margin = margin(1, 0, 0, 0, unit = 'lines')),
+      axis.text.y = element_text(size = rel(1)),
+      axis.title.y = element_text(size = rel(1)),
+      panel.background = bg_rect,
+      panel.border = element_blank(),
+      panel.grid.major = gridlines,
+      panel.grid.minor = gridlines,
+      panel.spacing = unit(1.25, 'lines'),
+      legend.background = bg_rect,
+      legend.key.width = unit(1.5, 'line'),
+      legend.key = element_blank(),
+      strip.background = element_blank()
+    )
+}
+```
+
+## Business Problem
+The goal of this analysis is to use features in Adventure Works Cycle customer and sales data to predict whether or not a customer will purchase a bicycle. Using the same data, Adventure Works would also like to predict how much money, on average, a customer will spend in a given month across all product categories.
+
+### Process
+Exploratory data analysis, calculation of summary and descriptive statistics, and visualizations are all methods used to identify relationships between the data and the features of interest: bike buyer classification and average monthly spend. Once relationships are identified, a classification model will prove useful in predicting if a customer will purchase a bicycle. Finally, a regression model will assist in predicting the average amount of money a customer will spend in a given month.
+
+```{r customer-data, include=FALSE}
+# customer data
+customers <- read_csv('data/AWCustomers.csv', col_types = cols(
+  CustomerID = col_integer(),
+  Title = col_character(),
+  FirstName = col_character(),
+  MiddleName = col_character(),
+  LastName = col_character(),
+  Suffix = col_character(),
+  AddressLine1 = col_character(),
+  AddressLine2 = col_character(),
+  City = col_character(),
+  StateProvinceName = col_character(),
+  CountryRegionName = col_character(),
+  PostalCode = col_character(),
+  PhoneNumber = col_character(),
+  BirthDate = col_date(format = ""),
+  Education = col_character(),
+  Occupation = col_factor(levels = c('Skilled Manual','Manual', 'Clerical',
+                                     'Management','Professional')),
+  Gender = col_factor(levels = c('M','F')),
+  MaritalStatus = col_factor(levels = c('M','S')),
+  HomeOwnerFlag = col_integer(),
+  NumberCarsOwned = col_integer(),
+  NumberChildrenAtHome = col_integer(),
+  TotalChildren = col_integer(),
+  YearlyIncome = col_integer(),
+  LastUpdated = col_date(format = "")
+))
+```
+
+```{r sales-data}
+# sales data
+sales <- read_csv('data/AWSales.csv', col_types = cols(
+  CustomerID = col_integer(),
+  BikeBuyer = col_integer(),
+  AvgMonthSpend = col_double()
+))
+```
+
+## Data
+
+Adventure Works provided two separate datasets: one containing customer demographic data and one containing sales data. The initial customer data contained 18361 observations and 24 features. The sales data contained 18355 and 3 features. The structure of each of these datasets is as follows:
+
+```{r structure}
+str(customers, give.attr=F)
+str(sales, give.attr=F)
+```
+
+
+## Pre-Processing
+Data pre-processing is an integral step in any data analysis exercise. Cleaning the raw data is a necessary step to ensure that each of the features in our data is of a useable data type and contains no null values or duplicates. We will also do some feature engineering in this step to create new features that will be of assistance in our visualization and modeling steps.
+
+### Remove Duplicates
+The first step when working with customer data is to check for duplicate records and remove them. Using the Customer ID field, it is possible to check for duplicates by finding any ID numbers that appear more than once. 
+
+```{r identify-duplicates}
+#identify duplicate customers
+customers %>%
+  select(1:6) %>%
+  group_by(CustomerID) %>% 
+  filter(n() > 1)
+
+# identify duplicate sales
+sales %>% 
+  group_by(CustomerID) %>% 
+  filter(n() > 1)
+```
+
+Based on these results, we can see that there are 6 customers in our dataset that are duplicates. They will be removed from this analysis, leaving the new dimensions of the customer dataset as:
+
+```{r remove-duplicates}
+# remove duplicate customers
+customers <- customers %>% 
+  dplyr::distinct(CustomerID, .keep_all = TRUE)
+
+# new customer dimensions
+dim(customers)
+```
+
+### Join Data
+With duplicate records removed, it is now possible to join the customer data with sales data from the same period. This creates one dataset of customer demographic information combined with their purchasing patterns.
+
+```{r join}
+# join sales data
+df <- left_join(customers, sales, by = "CustomerID")
+str(df, give.attr=F)
+```
+
+### Check for Null Values
+It is important to be sure that the data does not contain any missing values. Zeros and Null values can wreak havoc when trying to fit a model to data.
+
+```{r check-for-na}
+# check for na values
+sapply(df, function(x) sum(is.na(x)))
+```
+
+This is great! No missing values makes for a much cleaner analysis. There are, however, have a few NULL values in our customer demographic variables, but this will be ignored primarily because the NULL values are located in customer names.
+
+### Feature Engineering
+While the data provided by Adventure works is great, it would be helpful in our analysis to add a few features to assist in visualization and modeling. Specifically, we will be adding the following features:
+
+* Customer age
+* Bins for categorizing customer age ranges
+* Bins classifying customers as owning a car or not
+* Bins classifying a customer as having children or not
+
+```{r feature-engineering}
+# convery BikeBuyer to factor
+df$BikeBuyer <- as.factor(df$BikeBuyer)
+
+# calculate age  
+df$Age <- as.numeric(floor(difftime(df$LastUpdated,
+                                    df$BirthDate, 
+                                    units = "weeks")/52))
+
+# age bins
+df$Age_Bin_Under_18 <- ifelse(df$Age <= 18, 1, 0)
+df$Age_Bin_19_to_25 <- ifelse(df$Age >= 19 & df$Age <= 25, 1, 0)
+df$Age_Bin_26_to_29 <- ifelse(df$Age >= 26 & df$Age <= 29, 1, 0)
+df$Age_Bin_30_to_50 <- ifelse(df$Age >= 30 & df$Age <= 50, 1, 0)
+df$Age_Bin_Over_50 <- ifelse(df$Age >= 51, 1, 0)
+
+
+
+# single age bin
+df$Age_Bin <- as.factor(ifelse(df$Age_Bin_Under_18 == 1, 'Under 18',
+                     ifelse(df$Age_Bin_19_to_25 == 1, '19 to 25',
+                            ifelse(df$Age_Bin_26_to_29 == 1, '26 to 29',
+                                   ifelse(df$Age_Bin_30_to_50 == 1, '30 to 50',
+                                          ifelse(df$Age_Bin_Over_50 == 1, 'Over 50',0))))))
+
+
+# car bins
+df$Car_Bins <- as.factor(ifelse(df$NumberCarsOwned == 0, "0", "+1"))
+
+# child bins
+df$Child_Bins <- as.factor(ifelse(df$NumberChildrenAtHome == 0, "0", "+1"))
+```
+
+By adding these features, we are making it easier to visualize relationships and incorporate new information into our models. We are also making better use of existing variables.
+
+## Summary Statistics
+Once the data is clean, it is time to preform some statistical analysis to get a deeper understanding of the features in our dataset. 
+
+### Data Summary
+Calculating a summary is helpful in gaining some insight into numerical features.
+
+```{r summary-numeric}
+# select numeric columns
+num <- df %>% 
+  dplyr::select_if(is.numeric) %>% 
+  dplyr::select(-1)
+
+# summarize numeric data
+summary(num)
+```
+
+A few initial insights gained from this summary include:
+
+* The majority of customers in the data own a home.
+* Most customers own one or more cars.
+* Just over half of the customers in the data have purchased a bicycle.
+* Customers spend between \$44.10 and \$65.29 per month on average.
+* Yearly Income seems to contain some outliers as indicated buy the variation between a mean value of \$72,759 and a median value of \$61,851
+
+
+### Correlation
+It is possible to assess the strength and direction of relationships of numeric features in the data using correlation.  The following are calculations and a visual representation of correlation between numerical features.
+
+```{r correlation}
+# correlation of numeric data
+cor(num)
+```
+```{r correlation-matrix, fig.width=8, fig.asp= .6}
+# correlation matrix
+cor <- ggcorr(num, 
+            hjust = 0.75, 
+            size = 2, 
+            layout.exp = 1, 
+            label = TRUE, 
+            label_size = 3, 
+            label_color = "white") +
+  labs(title = 'Correlation Plot',
+       subtitle = 'Average monthly spend is slightly correlated (0.53) with yearly income')
+
+cor + custom_theme()
+```
+
+Here we can see that we have a slight correlation between yearly income and bike buying, but this should not really be a surprise: if you make more money you are likely to have more disposable income.
+
+
+## Visualization
+Data visualization is a helpful technique when we are attempting to identify patterns or trends in our features. Our visualization will be focused on identifying trends interactions and trends in our two features of interest: Average Month Spend and Bike Buyer.
+
+### Average Monthly Spend
+Average monthly spend is a continuous numerical variable and would be best represented visually by a histogram. A histogram will show how average monthly spend is distributed across the customers in our dataset.
+
+```{r AvgMonthSpend, fig.width=6, fig.asp= .6}
+# histogram of AvgMonthSpend
+ams_hist <- ggplot(df, aes(AvgMonthSpend)) + 
+  geom_histogram(breaks = seq(40,70, by = 2),
+                 color = 'black',
+                 fill = 'grey') + 
+  geom_vline(aes(xintercept=mean(AvgMonthSpend, na.rm=T)),
+             color='red', linetype='dashed', size=1) +
+  labs(title="Average Monthly Spend", 
+       subtitle="Mean monthly spend across all Adventure Works customers is $51.77.") +
+  custom_theme()
+
+ams_hist
+
+```
+
+Here we can see that the data is slightly right-skewed, but is distributed normally for the most part. The red line in our plot is used to identify the mean ($51.77).
+
+Plotting the interaction between average monthly spend and some of our other variables will offer some additional insights.
+
+```{r AvgMonthSpend-grid}
+# AvgMonthSpend by MaritalStatus
+ams_1 <- ggplot(df, aes(MaritalStatus, AvgMonthSpend, fill = MaritalStatus)) +
+  geom_boxplot() +
+  labs(title="Marital Status",
+       x = "Marital Status") +
+  scale_fill_brewer(palette = "Set1", guide = F) +
+  coord_flip() +
+  custom_theme()
+
+# AvgMonthSpend by NumberCarsOwned
+ams_2 <- ggplot(df, aes(Car_Bins, AvgMonthSpend, fill = Car_Bins)) +
+  geom_boxplot() +
+  labs(title="Number of Cars Owned", 
+       x = "Number of Cars Owned") +
+  scale_fill_brewer(palette = "Set1", guide = F) +
+  coord_flip() +
+  custom_theme()
+
+# AvgMonthSpend by Gender
+ams_3 <- ggplot(df, aes(Gender, AvgMonthSpend, fill = Gender)) +
+  geom_boxplot() +
+  labs(title= "Gender") + 
+  scale_fill_brewer(palette = "Set1", guide = F) +
+  coord_flip() +
+  custom_theme()
+
+# AvgMonthSpend by NumberChildrenAtHome
+ams_4 <- ggplot(df, aes(Child_Bins, AvgMonthSpend, fill = Child_Bins)) +
+  geom_boxplot() +
+  labs(title= "Number of Children at Home", 
+       x = "Children at Home") +
+  scale_fill_brewer(palette = "Set1", guide = F) +
+  coord_flip() +
+  custom_theme()
+
+# AvgMonthSpend grid
+grid.arrange(ams_1,ams_2,ams_3,ams_4, ncol = 2, nrow = 2, 
+             top=textGrob("Average Monthly Spend Plots \n", 
+                          gp=gpar(fontsize=24,
+                                  fontfamily='Roboto',
+                                  fontface = 'bold')))
+```
+
+Findings from our average monthly spend box plots include:
+
+* Single people (\$52.03) seem to spend more than married people (\$51.54) at Adventure Works on a monthly basis.
+* Having one or more vehicles (\$52.07) seems to increase average monthly spend as compared to customers who own no vehicles (\$50.66).
+* Males (\$52.82) appear to spend more than females (\$50.69) with the top spenders beings solely male.
+* Families with one or more children at home (\$52.58) tend to spend more on a monthly basis than do families with no children (\$51.44).
+
+Age could very well prove to be an important factor in our analysis, as it often follows that wealth is a function of age. We can inspect to see if age has any impact on our customer’s average monthly spending using the age bin feature that we created.
+
+```{r AvgMonthlySpend-Age_Bin, fig.width=6, fig.asp= .6}
+ams_age <- ggplot(df, aes(Age_Bin, AvgMonthSpend, fill = Age_Bin)) +
+  geom_boxplot() +
+  labs(title= "Age Bin Spending",
+       subtitle = "Customers between the ages of 30 and 50 seem to spend the most on a monthly basis.",
+       x = "Age Bin") +
+  scale_fill_brewer(palette = "Greys", guide = F) +
+  coord_flip() +
+  custom_theme()
+
+ams_age
+
+```
+
+Here we can see that customers between the ages of 30 and 50 tend to spend the most while customers 18 or under seem to spend the least.
+
+### Bike Buyer
+Our second variable of interest, bike buyer, is a factor type variable with values 0 and 1 representing “No” and “Yes” respectively. We can use bar plots to visualize our bike buyer feature.
+
+```{r BikeBuyer, fig.width=6, fig.asp= .6}
+# bar chart of bike buyers
+bb <- ggplot(df, aes(BikeBuyer, fill = BikeBuyer)) +
+  geom_bar() +
+  labs(title="Bike Buyers", 
+       subtitle="55% of customers purchased bicycles while 45% customers did not.",
+       x="BikeBuyer",
+       y="Count") +
+  scale_x_discrete(labels = c('No','Yes')) +
+  scale_fill_manual('BikeBuyer', 
+                    values = c('#E41A1C','#377EB8'),
+                    labels = c('No','Yes'),
+                    guide = F) +
+  custom_theme()
+
+bb
+```
+
+Interaction between bike buyer and other features of our data will offer some additional information into what might make a customer a bike buyer.
+
+```{r BikeBuyer-grid}
+# number of cars owned by bike buyers
+bb_1 <- ggplot(df, aes(as.factor(NumberCarsOwned), fill = factor(BikeBuyer))) +
+  geom_bar(position = 'dodge') +
+  labs(title = "Number of Cars Owned", 
+       x = "Number of Cars Owned",
+       y = "Count") +
+  scale_fill_manual('BikeBuyer', 
+                    values = c('#E41A1C','#377EB8'),
+                    labels = c('No','Yes'),
+                    guide = F) +
+  custom_theme()
+
+# occupation by bike buyers
+bb_2 <- ggplot(df, 
+               aes(reorder(Occupation,Occupation, function(x)-length(x)), 
+                   fill = factor(BikeBuyer))) +
+  geom_bar(position = 'dodge') +
+  labs(title = "Occupation", 
+       x = "Occupation",
+       y = "Count") +
+  scale_fill_manual('BikeBuyer', 
+                    values = c('#E41A1C','#377EB8'),
+                    labels = c('No','Yes'),
+                    guide = F) +
+  custom_theme()
+
+# gender by bike buyers
+bb_3 <- ggplot(df, aes(Gender, fill = factor(BikeBuyer))) +
+  geom_bar(position = 'dodge') +
+  labs(title = "Gender", 
+       x = "Gender",
+       y = "Count") +
+  scale_fill_manual('BikeBuyer', 
+                    values = c('#E41A1C','#377EB8'),
+                    labels = c('No','Yes'),
+                    guide = F) +
+  custom_theme()
+
+# marital status by bike buyers
+bb_4 <- ggplot(df, aes(MaritalStatus, fill = factor(BikeBuyer))) +
+  geom_bar(position = 'dodge') +
+  labs(title = "Marital Status", 
+       x = "Marital Status",
+       y = "Count") +
+  scale_fill_manual('BikeBuyer', 
+                    values = c('#E41A1C','#377EB8'),
+                    labels = c('No','Yes'),
+                    guide = F) +
+  custom_theme()
+
+# BikeBuyer grid
+grid.arrange(bb_1,bb_2,bb_3,bb_4, ncol = 2, nrow = 2, 
+             top=textGrob("Bike Buyer Plots \n", 
+                          gp=gpar(fontsize=24,
+                                  fontfamily='Roboto',
+                                  fontface = 'bold')))
+```
+
+Findings from our bike buyer bar plots include:
+
+* Customers with two vehicles are more likely to purchase bicycles, 3665 vs 1419. Customers with one vehicle at home tend not to purchase bicycles, 4,703 vs 2,751.
+* Manual labor occupations are less likely to purchase bicycles, 2489 vs 886
+* Males tend to purchase more bicycles more often than the do not 5,653 vs 3,632
+* Customers who are married tend to purchase more bicycles than they do not, 6,348 vs 3,597
+
+### Age Group Spending by Income and Gender
+Now that we have determined that age, gender, and income 
+Splitting up our average monthly spending by age group and factoring in income and gender, we can see clearly that some faction of males between the ages of 30 and 50 have much higher average monthly spends than all other age groups.
+
+```{r spend-income-gender-age}
+
+# adjust order of Age_Bin factor
+df$Age_Bin <- factor(df$Age_Bin, levels = c('Under 18',
+                                            '19 to 25',
+                                            '26 to 29',
+                                            '30 to 50',
+                                            'Over 50'))
+
+# boxplots of Average Monthly Spend by age and gender
+siga <- ggplot(df, aes(YearlyIncome, AvgMonthSpend, color = Gender)) + 
+  geom_point() +
+  labs(title="Average Spend by Income, Gender, and Age", 
+       subtitle="There is a subset of males bewteen the ages of 30 and 50 who spend more on average each month as yearly income increases.",
+       x = "Yearly Income",
+       y = "Average Monthly Spend") +
+  scale_color_manual('Gender', 
+                    values = c('#3A86FF','#FF006E'),
+                    labels = c('M','F')) +
+  custom_theme()
+
+
+# binned by age group
+siga + facet_grid(. ~ Age_Bin) 
+```
+
+## Modeling
+With our exploratory data analysis in hand, it is now time to take what we learned and generate machine learning models to address our business concerns. 
+
+### Data Splitting
+Prior to creating any machine learning models, it is best practice to split the data into separate training and testing subsets. Splitting the data in such a way is a very straightforward process through use of the `caret` package in R. The purpose of this exercise is to “hold back” data for which we have known labels (i.e. BikeBuyer and AvgMonthSpend) so that we can assess model performance against data that our models have never seen before.
+
+```{r modeling-libraries, include=FALSE}
+pacman::p_load(caret, randomForest, formattable, ROCR)
+```
+
+```{r select-model-cols}
+# select columns of interest
+df <- df %>%
+  select(BikeBuyer, AvgMonthSpend, Gender, Age_Bin, YearlyIncome, Occupation,
+         MaritalStatus, NumberCarsOwned, Age, NumberChildrenAtHome, TotalChildren)
+
+str(df)
+```
+
+```{r train-test-split}
+
+# split index for 80/20 split
+set.seed(123)
+index <- createDataPartition(df$BikeBuyer, p = .8, 
+                             list = FALSE, 
+                             times = 1)
+
+# split data into training and testing sets
+train <- df[index,]
+test <- df[-index,]
+```
+
+Here we are using an 80/20 training to testing split ratio.
+
+### Classification
+
+For our classification model, we will use the random forest algorithm to classify which customers are most likely to purchase a bicycle. 
+
+```{r rf-model}
+# create model
+rf.model <- randomForest(BikeBuyer ~ Gender + Age_Bin + YearlyIncome + 
+                           Occupation + MaritalStatus + NumberCarsOwned + Age + 
+                           NumberChildrenAtHome + TotalChildren,
+                         data = train,
+                         importance = T,
+                         ntree = 1000,
+                         mtry = 3)
+
+# make predictions using test data
+rf.predict <- predict(rf.model, newdata = test, type = 'response')
+
+```
+
+We can get a diaognosis of our model through caret's `confusionMatrix()` function.
+
+```{r confusion-matrix}
+confusionMatrix(data = rf.predict, reference = test$BikeBuyer)
+```
+
+We can assess the performance of our model visually buy plotting a receiver operating characteristic or ROC curve. In an ROC curve, we are plotting the true positive rate (TPR; also known as sensitivity) against the false positive rate (FPR; calculated as 1 − specificity) at various threshold settings. The diagonal line depicted shows the equivalent of randomly assigning classes to observations.
+
+```{r custom-roc-plot, echo=FALSE}
+# custom plot
+custom <- list(
+  theme(plot.title=element_text(size=24,
+                                face='bold',
+                                family='Roboto',
+                                lineheight=1,
+                                hjust=0),
+        plot.subtitle = element_text(family = 'Roboto',
+                                     size = rel(1), 
+                                     lineheight = 1),
+        plot.caption = element_text(size=8,
+                                    face='italic',
+                                    hjust=1))
+  )
+
+```
+
+```{r fr-roc-curve, fig.width=6, fig.asp= .6}
+# assess model performance
+predict <- predict(rf.model, newdata=test, type='prob')[,2]
+predictions <- as.vector(predict)
+pred <- prediction(predictions, test$BikeBuyer)
+perf <- performance(pred, measure = 'tpr', x.measure = 'fpr')
+
+# extract auc
+auc <- performance(pred, measure = 'auc')
+auc <- auc@y.values[[1]]
+
+# create a dataframe of roc data
+roc.data.rf <- data.frame(fpr=unlist(perf@x.values),
+                       tpr=unlist(perf@y.values),
+                       model='Random Forest')
+
+# roc curve
+rf.roc <- ggplot(roc.data.rf, aes(x=fpr, ymin=0, ymax=tpr)) +
+  geom_ribbon(alpha=0.2) +
+  geom_line(aes(y=tpr)) +
+  geom_abline(intercept = 0, slope = 1, linetype = 'dashed', alpha = 0.5) +
+  labs(title = 'ROC Curve', 
+       subtitle = paste0("Area Under the Curve (AUC) of ", percent(auc,2)),
+           x = 'False Positive Rate (1-Specificity)', 
+           y = 'True Positive Rate (Sensitivity)') +
+  theme_classic()
+
+rf.roc + custom
+```
+
+A really useful feature that `caret` provides when using the random forest algorithim is the ability to check feature importance 
+
+```{r rf-feature-importance}
+# extract importance to data frame  
+importance <- as.data.frame(rf.model$importance)
+importance <- rownames_to_column(importance, var = 'Feature')
+
+# MeanDecreaseAccuracy
+mda <- ggplot(importance, aes(reorder(Feature,MeanDecreaseAccuracy), MeanDecreaseAccuracy)) +
+  geom_point(stat = 'identity') +
+  geom_point(col="tomato2", size=3) +   # Draw points
+  geom_segment(aes(x=Feature, 
+                   xend=Feature, 
+                   y=min(MeanDecreaseAccuracy), 
+                   yend=max(MeanDecreaseAccuracy)), 
+               linetype="dashed", 
+               size=0.1) +
+  labs(x='Feature',
+       y='Mean Decrease in Accuracy') +
+  coord_flip() +
+  theme_classic(base_family = 'Roboto Condensed', base_size = 12)
+
+# MeanDecreaseGini
+mdg <- ggplot(importance, aes(reorder(Feature,MeanDecreaseGini), MeanDecreaseGini)) +
+  geom_point(stat = 'identity') +
+  geom_point(col="tomato2", size=3) +   # Draw points
+  geom_segment(aes(x=Feature, 
+                   xend=Feature, 
+                   y=min(MeanDecreaseGini), 
+                   yend=max(MeanDecreaseGini)), 
+               linetype="dashed", 
+               size=0.1) +
+  coord_flip() +
+  labs(x='Feature',
+       y='Mean Decrease in Gini') +
+  theme_classic(base_family = 'Roboto Condensed', base_size = 12)
+
+# create plot grid
+#title <- textGrob('Feature Importance', gp=gpar(fontface='bold'))
+grid.arrange(mda,mdg,ncol=2, 
+             top=textGrob("Feature Importance \n", 
+                          gp=gpar(fontsize=24,fontfamily='Roboto', fontface='bold')))
+```
+
+Analyzing feature importance allows us to see the impact individual features have when performance tuning our model. The more the accuracy of the random forest decreases due to the exclusion of a feature, the more important that feature is to classification. Features with a large mean decrease in accuracy are more important for classification. The Gini coefficient is a measure of homogeneity from 0 (homogeneous) to 1 (heterogeneous).
+
+### Regression
+Using multiple linear regression, we can create a model  that generates continuous predictions for average monthly spend based on a subset of features in our data. Once again, we being by training our model using out 80% training dataset.
+
+```{r lm-model}
+# linear regression
+lm.model <- lm(AvgMonthSpend ~ Occupation + Gender + MaritalStatus + NumberChildrenAtHome + 
+                 TotalChildren + YearlyIncome + Age + Age_Bin,
+               data = train)
+
+```
+
+Using the summary function on our model returns a statistical summary of our model.
+
+```{r lm-summary}
+summary(lm.model)
+```
+
+Finally, we can fit our model to our testing data and calculate the root mean square error (RMSE), or the standard deviation between our predicted and actual values.
+
+```{r rmse}
+pred.lm.model <- predict(lm.model, test)
+
+RMSE.lm.model <- round(sqrt(mean((pred.lm.model - test$AvgMonthSpend)^2)),2)
+
+# RMSE
+print(paste0('RMSE: ',RMSE.lm.model))
+```
+
+The closer the RMSE is to 0 the more accurate our predictions are. An RMSE of 2.29 is better than randomly guessing, but there is definetly room for improvemnt in our model.  
+
+## Conclusion
+
+While many factors may contribute to customer purchasing habits, significant features found in this analysis include:
+
+* **Yearly Income** – larger incomes may lead to a greater portion of that income being considered disposable.
+* **Age and Gender** – based on the results of our analysis, men between the ages of 30 and 50 seem to spend more money in the store on average.
+
+Our classification model preformed above average in terms of classifying bike buyers (AUC of 87.28%), and our regression model produced a RMSE of 2.29. To enhance the performance of our models we could attempt to do some additional tuning. We could also seek some additional data. For example, we might be able to gain some additional insight into customer spending given data on other types of products that a customer buys.
+
+Based on these results, we can recommend that Adventure Works might be best suited targeting marketing campaigns towards men between the ages of 30 and 50 years old. Alternatively, Adventure works may be interested in targeting their marketing efforts on other age groups in an effort to drive sales across all customer segments.
